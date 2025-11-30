@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     CategoryView, TopicView, SubtopicView, QuestionView,
     GenerateQuestionsView, QuestionConfigurationStatusView, GetTopicsByCategoryView, GetSubtopicsByTopicView,
-    GetAllQuestionsView
+    GetAllQuestionsView, GetAllQuestionConfigurationsView
 )
 
 app_name = 'questionbank'
@@ -35,5 +35,6 @@ urlpatterns = [
     # Question generation endpoints
     path('generate-questions/', GenerateQuestionsView.as_view(), name='generate_questions'),
     path('question-configuration-status/<str:config_uuid>/', QuestionConfigurationStatusView.as_view(), name='question_configuration_status'),
+    path('get-all-question-configurations/', GetAllQuestionConfigurationsView.as_view(), name='get_all_question_configurations'),
 ]
 

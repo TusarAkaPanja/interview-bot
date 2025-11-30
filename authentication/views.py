@@ -10,8 +10,10 @@ from .serializers import (
     UserSerializer,
     CustomTokenObtainPairSerializer,
     UserRegistrationSerializer,
-    CandidateRegistrationSerializer
+    CandidateRegistrationSerializer,
+    CandidateSerializer
 )
+from .models import Candidate
 
 import logging
 
@@ -109,3 +111,38 @@ class RegisterCandidateView(APIView):
                 status_code=status.HTTP_201_CREATED
             )
         return ApiResponseBuilder.error('Candidate registration failed', serializer.errors)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class GetCandidatesView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = CandidateSerializer
+    
+    def get(self, request):
+        try:
+            if not request.user.organization:
+                return ApiResponseBuilder.error(
+                    'User must belong to an organization to fetch candidates',
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+            
+            candidates_queryset = Candidate.objects.filter(organization=request.user.organization)
+            candidates = self.serializer_class(candidates_queryset, many=True)
+            return ApiResponseBuilder.success('Candidates fetched successfully', candidates.data)
+        except Exception as e:
+            logger.error(f'Error fetching candidates: {e}')
+            return ApiResponseBuilder.error('Error fetching candidates', str(e))
+
+@method_decorator(csrf_exempt, name='dispatch')
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # remove the refresh token and access token from the response
+            response = ApiResponseBuilder.success('User logged out successfully')
+            response.delete_cookie('refresh_token')
+            response.delete_cookie('access_token')
+            return response
+        except Exception as e:
+            logger.error(f'Error logging out user: {e}')
+            return ApiResponseBuilder.error('Error logging out user', str(e))

@@ -1,5 +1,6 @@
 from rest_framework import status, permissions
 from rest_framework.views import APIView
+from rest_framework.response import Response
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.db import transaction
@@ -26,7 +27,13 @@ class CustomPagination(PageNumberPagination):
     page_query_param = 'page'
 
     def get_paginated_response(self, data):
-        return Response(data)
+        return Response({
+            'total_count': self.page.paginator.count,
+            'page': self.page.number,
+            'page_size': self.page_size,
+            'next_page': self.get_next_link(),
+            'results': data
+        })
 
 
 
@@ -476,10 +483,70 @@ class GetAllQuestionsView(APIView):
 
             paginator = CustomPagination()
             paginated_questions = paginator.paginate_queryset(questions, request)
-            return paginator.get_paginated_response(QuestionSerializer(paginated_questions, many=True).data)
+            
+            if paginated_questions is not None:
+                serializer = QuestionSerializer(paginated_questions, many=True)
+                # Get page size from request or use default
+                try:
+                    page_size = int(request.query_params.get('page_size', paginator.page_size))
+                except (ValueError, TypeError):
+                    page_size = paginator.page_size
+                
+                pagination_data = {
+                    'total_count': paginator.page.paginator.count,
+                    'page': paginator.page.number,
+                    'page_size': page_size,
+                    'next_page': paginator.get_next_link(),
+                    'results': serializer.data
+                }
+                return ApiResponseBuilder.success(
+                    'Questions retrieved successfully',
+                    pagination_data
+                )
+            
+            # If no pagination needed, return all results
+            serializer = QuestionSerializer(questions, many=True)
+            return ApiResponseBuilder.success(
+                'Questions retrieved successfully',
+                {
+                    'total_count': questions.count(),
+                    'page': 1,
+                    'page_size': questions.count(),
+                    'next_page': None,
+                    'results': serializer.data
+                }
+            )
         except Exception as e:
             return ApiResponseBuilder.error(
                 message='Error retrieving questions',
+                errors=str(e),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class GetAllQuestionConfigurationsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        """Get all question configurations with filteration and pagination"""
+        try:
+            question_configurations = QuestionConfiguration.objects.filter(organization=request.user.organization)
+            paginator = CustomPagination()
+            paginated_question_configurations = paginator.paginate_queryset(question_configurations, request)
+            if paginated_question_configurations is not None:
+                serializer = QuestionConfigurationSerializer(paginated_question_configurations, many=True)
+                return ApiResponseBuilder.success(
+                    'Question configurations retrieved successfully',
+                    {
+                        'total_count': paginator.page.paginator.count,
+                        'page': paginator.page.number,
+                        'page_size': paginator.page_size,
+                        'next_page': paginator.get_next_link(),
+                        'results': serializer.data
+                    }
+                )
+        except Exception as e:
+            return ApiResponseBuilder.error(
+                message='Error retrieving question configurations',
                 errors=str(e),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
