@@ -21,4 +21,5 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('api/auth/', include('authentication.urls')),
     path('api/organizations/', include('organizations.urls')),
+    path('api/questionbank/', include('questionbank.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
