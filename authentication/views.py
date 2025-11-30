@@ -71,7 +71,27 @@ class RegisterCandidateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = self.serializer_class(data=request.data)
+        if not request.user.organization:
+            return ApiResponseBuilder.error(
+                'User must belong to an organization to register candidates',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user is admin or HR
+        if not request.user.role:
+            return ApiResponseBuilder.error(
+                'User must have a role to register candidates',
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        
+        role_name = request.user.role.name.lower()
+        if role_name not in ['admin', 'hr']:
+            return ApiResponseBuilder.error(
+                'Only admin or HR can register candidates',
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.serializer_class(data=request.data, context={'request': request})
         if serializer.is_valid():
             candidate = serializer.save()
             # Return candidate data (without password)

@@ -33,18 +33,17 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
-        # Get HR role
         try:
-            hr_role = Role.objects.get(name__iexact='hr')
+            admin_role = Role.objects.get(name__iexact='admin')
         except Role.DoesNotExist:
-            raise serializers.ValidationError({'role': 'HR role does not exist. Please run create_roles command.'})
+            raise serializers.ValidationError({'role': 'Admin role does not exist. Please run create_roles command.'})
         
         user = User.objects.create_user(
             email=validated_data['email'],
             password=password,
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
-            role=hr_role
+            role=admin_role
         )
         return user
 
@@ -53,7 +52,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = 'email'
     
     def validate(self, attrs):
-        # Get email from attrs (could be 'email' or 'username' depending on request)
         email = attrs.get('email') or attrs.get(self.username_field)
         password = attrs.get('password')
         
@@ -61,15 +59,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError('Must include "email" and "password".')
         
         from django.contrib.auth import authenticate
-        user = authenticate(request=self.context.get('request'), username=email, password=password)
-        
+        user = authenticate(request=self.context.get('request'), username=email, password=password) 
         if not user:
             raise serializers.ValidationError('No active account found with the given credentials')
-        
         if not user.is_active:
             raise serializers.ValidationError('User account is disabled')
-        
-        # Update last login
         user.last_login = timezone.now()
         user.save(update_fields=['last_login'])
         
@@ -104,19 +98,20 @@ class CandidateRegistrationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'uuid', 'created_at']
 
     def create(self, validated_data):
-        # Generate random password if not provided
+        user = self.context['request'].user
+        organization = user.organization
+        
+        if not organization:
+            raise serializers.ValidationError('User must belong to an organization to register candidates')
         password = validated_data.pop('password', None)
         if not password:
             password = Candidate.generate_random_password()
-        
-        # Create candidate
         candidate = Candidate.objects.create(
             email=validated_data['email'],
             first_name=validated_data['first_name'],
-            last_name=validated_data['last_name']
+            last_name=validated_data['last_name'],
+            organization=organization
         )
-        
-        # Set password with salt and hash
         candidate.set_candidate_password(password)
         
         return candidate
