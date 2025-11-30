@@ -110,8 +110,6 @@ class Candidate(models.Model):
     )
     password = models.CharField(max_length=255, null=True, blank=True)
     salt = models.CharField(max_length=255, null=True, blank=True)
-    token = models.CharField(max_length=255, null=True, blank=True)
-    token_expires_at = models.DateTimeField(null=True, blank=True)
     last_login = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -121,36 +119,44 @@ class Candidate(models.Model):
         verbose_name_plural = 'Candidates'
         db_table = 'candidates'
         ordering = ['-created_at']
-        unique_together = ('email', 'token')
 
     def __str__(self):
         return self.email
 
-    def generate_token(self):
-        self.token = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
-        expiration_hours = int(os.getenv('CANDIDATE_TOKEN_EXPIRATION_TIME', 24))
-        self.token_expires_at = timezone.now() + timedelta(hours=expiration_hours)
-        self.save()
-        return self.token
-
-    def check_token(self, token):
-        if not token:
-            return False
-        if not self.token_expires_at:
-            return False
-        if self.token_expires_at < timezone.now():
-            return False
-        return self.token == token
-
     @staticmethod
     def generate_random_password():
-        return ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        # return a 8 character random password with letters and digits
+        random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        print(f'Random password: {random_password}')
+        return random_password
 
     def set_candidate_password(self, password):
-        if password:
-            if not self.salt:
-                self.salt = PasswordCrypto.generate_salt()
-            self.password = PasswordCrypto.hash_password(password, self.salt)
-            self.save()
-        else:
-            raise ValueError('Password cannot be empty')
+        if not password:
+            password = self.generate_random_password()
+        if not self.salt:
+            self.salt = PasswordCrypto.generate_salt()
+        self.password = PasswordCrypto.encrypt_password(password, self.salt)
+        self.save()
+    
+    def get_plaintext_password(self):
+        """Decrypt and return the plaintext password."""
+        if self.password and self.salt:
+            try:
+                return PasswordCrypto.decrypt_password(self.password, self.salt)
+            except Exception as e:
+                return None
+        return None
+    
+    def check_password(self, password):
+        """Check if the provided password matches the stored password.
+        Supports both encrypted (new) and hashed (old) passwords."""
+        if not self.password or not self.salt:
+            return False
+        try:
+            decrypted_password = PasswordCrypto.decrypt_password(self.password, self.salt)
+            return decrypted_password == password
+        except Exception:
+            try:
+                return PasswordCrypto.verify_password(password, self.password, self.salt)
+            except Exception:
+                return False

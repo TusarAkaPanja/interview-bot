@@ -5,6 +5,8 @@ from .views import (
     TokenRefreshView,
     RegisterView,
     RegisterCandidateView,
+    LogoutView,
+    GetCandidatesView,
 )
 
 app_name = 'authentication'
@@ -14,5 +16,7 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('register/', RegisterView.as_view(), name='register'),
     path('register/candidate/', RegisterCandidateView.as_view(), name='register_candidate'),
+    path('logout/', LogoutView.as_view(), name='logout'),
+    path('candidates/', GetCandidatesView.as_view(), name='get_candidates'),
 ]
 

@@ -82,12 +82,32 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
        
         token['user_uuid'] = str(user.uuid)
+        token['email'] = user.email
+        token['first_name'] = user.first_name
+        token['last_name'] = user.last_name
         if user.role:
             token['role'] = user.role.name
         else:
             token['role'] = None
             
         return token
+
+class CandidateSerializer(serializers.ModelSerializer):
+    password = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Candidate
+        fields = ['id', 'uuid', 'email', 'first_name','organization', 'password', 'last_name', 'created_at']
+        read_only_fields = ['id', 'uuid', 'created_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['organization'] = instance.organization.name
+        return data
+
+    # get the password from the request
+    def get_password(self, obj):
+        return obj.get_plaintext_password()
 
 class CandidateRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
