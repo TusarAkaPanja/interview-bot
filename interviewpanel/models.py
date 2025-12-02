@@ -128,4 +128,113 @@ class InterviewPanelCandidate(models.Model):
         self.token_expires_at = self.interview_panel.end_datetime
         self.save()
         return self.token
-        
+
+class InterviewSession(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('greeting', 'Greeting'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('abandoned', 'Abandoned'),
+    ]
+    
+    id = models.AutoField(primary_key=True)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    interview_panel_candidate = models.OneToOneField(
+        InterviewPanelCandidate,
+        on_delete=models.CASCADE,
+        related_name='interview_session',
+        null=True,
+        blank=True
+    )
+    current_question_index = models.IntegerField(default=0)
+    current_round = models.IntegerField(default=0)
+    current_difficulty = models.CharField(max_length=20, default='medium')
+    questions_asked_count = models.IntegerField(default=0)
+    total_questions_available = models.IntegerField(default=0)
+    greeting_text = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Interview Session'
+        verbose_name_plural = 'Interview Sessions'
+        db_table = 'interview_sessions'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Session for {self.interview_panel_candidate.candidate.first_name}"
+
+class InterviewAnswer(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('answered', 'Answered'),
+        ('skipped', 'Skipped'),
+        ('timeout', 'Timeout'),
+        ('analyzing', 'Analyzing'),
+    ]
+    
+    id = models.AutoField(primary_key=True)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    interview_session = models.ForeignKey(
+        InterviewSession,
+        on_delete=models.CASCADE,
+        related_name='answers'
+    )
+    question = models.ForeignKey(
+        InterviewPanelQuestion,
+        on_delete=models.CASCADE,
+        related_name='interview_answers',
+        null=True,
+        blank=True
+    )
+    round_number = models.IntegerField(default=0)
+    answer_text = models.TextField(blank=True, null=True)
+    transcription = models.TextField(blank=True, null=True)
+    full_transcription = models.TextField(blank=True, null=True)  # Complete transcription for the round
+    score = models.IntegerField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    time_taken_in_seconds = models.IntegerField(default=0)
+    
+    # Detailed scoring breakdown
+    score_technical = models.FloatField(default=0.0)
+    score_domain_knowledge = models.FloatField(default=0.0)
+    score_communication = models.FloatField(default=0.0)
+    score_problem_solving = models.FloatField(default=0.0)
+    score_creativity = models.FloatField(default=0.0)
+    score_attention_to_detail = models.FloatField(default=0.0)
+    score_time_management = models.FloatField(default=0.0)
+    score_stress_management = models.FloatField(default=0.0)
+    score_adaptability = models.FloatField(default=0.0)
+    score_confidence = models.FloatField(default=0.0)
+    
+    # Analysis results
+    analysis_summary = models.TextField(blank=True, null=True)
+    keywords_matched = models.JSONField(default=list)
+    keywords_coverage = models.FloatField(default=0.0)
+    red_flags_detected = models.JSONField(default=list)
+    next_action = models.CharField(max_length=20, blank=True, null=True)  # drill_up, drill_down, keep_level_same, end_of_interview
+    
+    started_at = models.DateTimeField(null=True, blank=True)
+    answered_at = models.DateTimeField(null=True, blank=True)
+    analyzed_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Interview Answer'
+        verbose_name_plural = 'Interview Answers'
+        db_table = 'interview_answers'
+        ordering = ['created_at']
+        unique_together = [['interview_session', 'question']]
+
+    def __str__(self):
+        return f"Answer for {self.question.question.name}"
+         
