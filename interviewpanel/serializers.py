@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InterviewPanel, InterviewPanelQuestionDistribution, InterviewPanelQuestion, InterviewPanelCandidate
+from .models import InterviewPanel, InterviewPanelQuestionDistribution, InterviewPanelQuestion, InterviewPanelCandidate, InterviewSession, InterviewAnswer, InterviewReportAnswerwiseFeedback
 from questionbank.models import Category, Topic, Subtopic, Question
 from authentication.models import Candidate
 
@@ -129,13 +129,68 @@ class InterviewPanelSerializer(serializers.ModelSerializer):
 
     def get_candidates(self, obj):
         candidates = obj.interview_panel_candidates.filter(is_deleted=False)
-        return [{
-            'uuid': cand.uuid,
-            'candidate_uuid': cand.candidate.uuid,
-            'candidate_name': f"{cand.candidate.first_name} {cand.candidate.last_name}",
-            'candidate_email': cand.candidate.email,
-            'token': cand.token,
-            'token_expires_at': cand.token_expires_at,
-            'score': cand.score
-        } for cand in candidates]
+        candidates_data = []
+        for cand in candidates:
+            try:
+                session = InterviewSession.objects.get(
+                    interview_panel_candidate=cand,
+                    is_deleted=False
+                )
+                status = session.status
+                started_at = session.started_at
+                completed_at = session.completed_at
+                cumulative_score = session.cumulative_score
+                has_report = session.status == 'completed' and bool(session.report_pdf_path)
+                session_uuid = str(session.uuid)
+            except InterviewSession.DoesNotExist:
+                status = 'pending'
+                started_at = None
+                completed_at = None
+                cumulative_score = None
+                has_report = False
+                session_uuid = None
+            
+            candidates_data.append({
+                'uuid': cand.uuid,
+                'candidate_uuid': cand.candidate.uuid,
+                'candidate_name': f"{cand.candidate.first_name} {cand.candidate.last_name}",
+                'candidate_email': cand.candidate.email,
+                'token': cand.token,
+                'token_expires_at': cand.token_expires_at,
+                'score': cand.score,
+                'session_uuid': session_uuid,
+                'status': status,
+                'started_at': started_at,
+                'completed_at': completed_at,
+                'cumulative_score': cumulative_score,
+                'has_report': has_report
+            })
+        return candidates_data
+
+class CandidateInterviewSessionSerializer(serializers.Serializer):
+    """Serializer for listing interview sessions for a candidate"""
+    session_uuid = serializers.UUIDField()
+    interview_panel_name = serializers.CharField()
+    interview_panel_uuid = serializers.UUIDField()
+    status = serializers.CharField()
+    started_at = serializers.DateTimeField(allow_null=True)
+    completed_at = serializers.DateTimeField(allow_null=True)
+    cumulative_score = serializers.FloatField(allow_null=True)
+    has_report = serializers.BooleanField()
+    report_pdf_path = serializers.CharField(allow_null=True)
+
+class CandidateReportDetailSerializer(serializers.Serializer):
+    """Serializer for detailed report data for UI display"""
+    session_uuid = serializers.UUIDField()
+    candidate_name = serializers.CharField()
+    candidate_email = serializers.EmailField()
+    interview_panel_name = serializers.CharField()
+    interview_panel_description = serializers.CharField(allow_null=True)
+    started_at = serializers.DateTimeField(allow_null=True)
+    completed_at = serializers.DateTimeField(allow_null=True)
+    cumulative_score = serializers.FloatField(allow_null=True)
+    technical_competency_score = serializers.FloatField()
+    behavioral_competency_score = serializers.FloatField()
+    psychological_competency_score = serializers.FloatField()
+    answers = serializers.ListField()
 

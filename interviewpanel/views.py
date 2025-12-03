@@ -4,10 +4,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.db import transaction
 from django.utils import timezone
+from django.http import FileResponse
+from django.conf import settings
+from pathlib import Path
 import random
 from utils.api_response import ApiResponseBuilder
 from organizations.permissions import IsAdminOrHr
-from .models import InterviewPanel, InterviewPanelQuestionDistribution, InterviewPanelQuestion, InterviewPanelCandidate
+from .models import InterviewPanel, InterviewPanelQuestionDistribution, InterviewPanelQuestion, InterviewPanelCandidate, InterviewSession, InterviewAnswer, InterviewReportAnswerwiseFeedback
 from .serializers import InterviewPanelCreateSerializer, InterviewPanelUpdateSerializer, InterviewPanelSerializer
 from questionbank.models import Category, Topic, Subtopic, Question
 from authentication.models import Candidate
@@ -370,5 +373,197 @@ class StartInterviewPanelView(APIView):
         except Exception as e:
             return ApiResponseBuilder.error(
                 'Error starting interview panel',
+                str(e),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class CandidateReportDetailView(APIView):
+    """API to get detailed report data for UI display for admin/recruiter"""
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrHr]
+
+    def get(self, request, session_uuid):
+        """Get detailed report data for a completed interview session"""
+        if not request.user.organization:
+            return ApiResponseBuilder.error(
+                'User must belong to an organization',
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            session = InterviewSession.objects.get(
+                uuid=session_uuid,
+                is_deleted=False
+            )
+            
+            if not session.interview_panel_candidate:
+                return ApiResponseBuilder.error(
+                    'No candidate associated with this session',
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check organization access
+            if session.interview_panel_candidate.interview_panel.organization != request.user.organization:
+                return ApiResponseBuilder.error(
+                    'Access denied',
+                    status_code=status.HTTP_403_FORBIDDEN
+                )
+            
+            if session.status != 'completed':
+                return ApiResponseBuilder.error(
+                    'Interview session is not completed yet',
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+            
+            candidate = session.interview_panel_candidate.candidate
+            panel = session.interview_panel_candidate.interview_panel
+            
+            # Get all answers
+            answers = InterviewAnswer.objects.filter(
+                interview_session=session,
+                question__isnull=False,
+                is_deleted=False
+            ).select_related('question__question').order_by('round_number')
+            
+            # Calculate competency scores
+            technical_scores = []
+            behavioral_scores = []
+            psychological_scores = []
+            
+            answer_data_list = []
+            for answer in answers:
+                # Technical competency
+                tech_score = (answer.score_technical or 0) + (answer.score_domain_knowledge or 0) + (answer.score_problem_solving or 0)
+                technical_scores.append(tech_score)
+                
+                # Behavioral and soft skills competency
+                behavioral_score = (
+                    (answer.score_communication or 0) + 
+                    (answer.score_creativity or 0) + 
+                    (answer.score_attention_to_detail or 0) + 
+                    (answer.score_time_management or 0) + 
+                    (answer.score_stress_management or 0) + 
+                    (answer.score_adaptability or 0) + 
+                    (answer.score_confidence or 0)
+                )
+                behavioral_scores.append(behavioral_score)
+                
+                # Psychological traits competency
+                psychological_score = (answer.score_confidence or 0) + (answer.score_stress_management or 0)
+                psychological_scores.append(psychological_score)
+                
+                # Get feedback
+                feedback_obj = InterviewReportAnswerwiseFeedback.objects.filter(
+                    interview_session=session,
+                    answer=answer,
+                    is_deleted=False
+                ).first()
+                
+                answer_data_list.append({
+                    'question': answer.question.question.question,
+                    'candidate_answer': answer.full_transcription or answer.transcription or 'No answer provided',
+                    'score': answer.score,
+                    'feedback': feedback_obj.feedback if feedback_obj else 'No feedback available',
+                    'round_number': answer.round_number
+                })
+            
+            avg_technical = sum(technical_scores) / len(technical_scores) if technical_scores else 0.0
+            avg_behavioral = sum(behavioral_scores) / len(behavioral_scores) if behavioral_scores else 0.0
+            avg_psychological = sum(psychological_scores) / len(psychological_scores) if psychological_scores else 0.0
+            
+            report_data = {
+                'session_uuid': str(session.uuid),
+                'candidate_name': f"{candidate.first_name} {candidate.last_name}",
+                'candidate_email': candidate.email,
+                'interview_panel_name': panel.name,
+                'interview_panel_description': panel.description,
+                'started_at': session.started_at,
+                'completed_at': session.completed_at,
+                'cumulative_score': session.cumulative_score,
+                'technical_competency_score': round(avg_technical, 2),
+                'behavioral_competency_score': round(avg_behavioral, 2),
+                'psychological_competency_score': round(avg_psychological, 2),
+                'answers': answer_data_list
+            }
+            
+            return ApiResponseBuilder.success(
+                'Report data retrieved successfully',
+                report_data
+            )
+        except InterviewSession.DoesNotExist:
+            return ApiResponseBuilder.error(
+                'Interview session not found',
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return ApiResponseBuilder.error(
+                'Error retrieving report data',
+                str(e),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class CandidateReportDownloadView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrHr]
+
+    def get(self, request, session_uuid):
+        if not request.user.organization:
+            return ApiResponseBuilder.error(
+                'User must belong to an organization',
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            session = InterviewSession.objects.get(
+                uuid=session_uuid,
+                is_deleted=False
+            )
+            
+            if not session.interview_panel_candidate:
+                return ApiResponseBuilder.error(
+                    'No candidate associated with this session',
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check organization access
+            if session.interview_panel_candidate.interview_panel.organization != request.user.organization:
+                return ApiResponseBuilder.error(
+                    'Access denied',
+                    status_code=status.HTTP_403_FORBIDDEN
+                )
+            
+            if session.status != 'completed':
+                return ApiResponseBuilder.error(
+                    'Interview session is not completed yet',
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not session.report_pdf_path:
+                return ApiResponseBuilder.error(
+                    'Report PDF not available',
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Build full path to PDF
+            pdf_path = Path(settings.BASE_DIR) / session.report_pdf_path
+            
+            if not pdf_path.exists():
+                return ApiResponseBuilder.error(
+                    'Report PDF file not found',
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Return file response
+            return FileResponse(
+                open(pdf_path, 'rb'),
+                content_type='application/pdf',
+                filename=pdf_path.name
+            )
+        except InterviewSession.DoesNotExist:
+            return ApiResponseBuilder.error(
+                'Interview session not found',
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return ApiResponseBuilder.error(
+                'Error downloading report',
                 str(e),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -156,6 +156,8 @@ class InterviewSession(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    report_pdf_path = models.CharField(max_length=500, blank=True, null=True)
+    cumulative_score = models.FloatField(default=0.0, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -196,7 +198,7 @@ class InterviewAnswer(models.Model):
     round_number = models.IntegerField(default=0)
     answer_text = models.TextField(blank=True, null=True)
     transcription = models.TextField(blank=True, null=True)
-    full_transcription = models.TextField(blank=True, null=True)  # Complete transcription for the round
+    full_transcription = models.TextField(blank=True, null=True)
     score = models.IntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     time_taken_in_seconds = models.IntegerField(default=0)
@@ -218,7 +220,7 @@ class InterviewAnswer(models.Model):
     keywords_matched = models.JSONField(default=list)
     keywords_coverage = models.FloatField(default=0.0)
     red_flags_detected = models.JSONField(default=list)
-    next_action = models.CharField(max_length=20, blank=True, null=True)  # drill_up, drill_down, keep_level_same, end_of_interview
+    next_action = models.CharField(max_length=20, blank=True, null=True)
     
     started_at = models.DateTimeField(null=True, blank=True)
     answered_at = models.DateTimeField(null=True, blank=True)
@@ -238,3 +240,23 @@ class InterviewAnswer(models.Model):
     def __str__(self):
         return f"Answer for {self.question.question.name}"
          
+
+class InterviewReportAnswerwiseFeedback(models.Model):
+    id = models.AutoField(primary_key=True)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    interview_session = models.ForeignKey(InterviewSession, on_delete=models.CASCADE, related_name='interview_session_answerwise_feedbacks')
+    answer = models.ForeignKey(InterviewAnswer, on_delete=models.CASCADE, related_name='interview_session_answerwise_feedbacks')
+    feedback = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Interview Session Answerwise Feedback'
+        verbose_name_plural = 'Interview Session Answerwise Feedbacks'
+        db_table = 'interview_session_answerwise_feedbacks'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Feedback for {self.answer.question.question.name}"
