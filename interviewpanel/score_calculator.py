@@ -10,19 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class ScoreCalculator:
-    """Calculate weighted scores with proper normalization"""
-    
     @staticmethod
     def normalize_weights(weights: Dict[str, float]) -> Dict[str, float]:
-        """
-        Normalize weights to sum to 1.0.
-        
-        Args:
-            weights: Dictionary of skill -> weight
-            
-        Returns:
-            Normalized weights dictionary
-        """
         total_weight = sum(weights.values())
         
         if total_weight == 0:
@@ -31,7 +20,7 @@ class ScoreCalculator:
             num_skills = len(weights)
             return {skill: 1.0 / num_skills for skill in weights}
         
-        if abs(total_weight - 1.0) > 0.01:  # Allow small floating point errors
+        if abs(total_weight - 1.0) > 0.01:
             logger.warning(
                 f"Weights don't sum to 1.0 (sum={total_weight:.4f}), normalizing"
             )
@@ -45,20 +34,6 @@ class ScoreCalculator:
         weights: Dict[str, float],
         normalize: bool = True
     ) -> float:
-        """
-        Calculate weighted total score.
-        
-        Args:
-            scores: Dictionary of skill -> score (0-100)
-            weights: Dictionary of skill -> weight (will be normalized if normalize=True)
-            normalize: Whether to normalize weights to sum to 1.0
-            
-        Returns:
-            Weighted total score (0-100)
-            
-        Raises:
-            ScoreCalculationError: If calculation fails
-        """
         if not scores:
             raise ScoreCalculationError("No scores provided")
         
@@ -91,18 +66,6 @@ class ScoreCalculator:
     
     @staticmethod
     def validate_analysis_scores(analysis: Dict) -> Dict[str, float]:
-        """
-        Extract and validate score fields from analysis.
-        
-        Args:
-            analysis: Analysis dictionary from LLM
-            
-        Returns:
-            Dictionary of skill -> score
-            
-        Raises:
-            ScoreCalculationError: If scores are invalid
-        """
         score_fields = [
             'score_technical',
             'score_domain_knowledge',

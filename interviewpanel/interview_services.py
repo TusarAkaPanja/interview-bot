@@ -48,7 +48,7 @@ class AnswerAnalysisService:
     def analyze_answer(
         self,
         answer: InterviewAnswer,
-        question: Question,  # Changed from InterviewPanelQuestion to Question
+        question: Question,
         session: InterviewSession
     ) -> Dict:
         # Get transcription
@@ -76,30 +76,62 @@ class AnswerAnalysisService:
             }
 
         try:
-            # Sanitize transcription (raises PromptInjectionError if injection detected)
+            # Sanitize transcription 
             sanitized_transcription = PromptSanitizer.sanitize_transcription(transcription)
-
             # Get question details
-            # Note: question is already the Question model instance (from answer.question.question)
-            # where answer.question is InterviewPanelQuestion and .question is the Question FK
             expected_answer = question.expected_answer or ""
             expected_keywords = question.expected_keywords or []
             difficulty_level = question.difficulty_level
             red_flags = question.red_flags or []
-
+            expected_keywords_coverage = question.expected_keywords_coverage or 0.1
+            expected_time_in_seconds = question.expected_time_in_seconds or 60
+            ideal_answer_summary = question.ideal_answer_summary or ""
+            score_weight_technical = question.score_weight_technical or 0.5
+            score_weight_domain_knowledge = question.score_weight_domain_knowledge or 0.3
+            score_weight_communication = question.score_weight_communication or 0.1
+            score_weight_problem_solving = question.score_weight_problem_solving or 0.05
+            score_weight_creativity = question.score_weight_creativity or 0.05
+            score_weight_attention_to_detail = question.score_weight_attention_to_detail or 0.05
+            score_weight_time_management = question.score_weight_time_management or 0.05
+            score_weight_stress_management = question.score_weight_stress_management or 0.05
+            score_weight_adaptability = question.score_weight_adaptability or 0.05
+            score_weight_confidence = question.score_weight_confidence or 0.05
+            
+            # Calculate time taken in seconds
+            if answer.time_taken_in_seconds and answer.time_taken_in_seconds > 0:
+                total_time_taken_in_seconds = answer.time_taken_in_seconds
+            elif answer.started_at and answer.answered_at:
+                time_delta = answer.answered_at - answer.started_at
+                total_time_taken_in_seconds = int(time_delta.total_seconds())
+            else:
+                total_time_taken_in_seconds = 0
+            
             # Build prompt using PromptBuilder
             prompt = PromptBuilder.build_analysis_prompt(
-                question_text=question.question,  # question.question is the text field
+                question_text=question.question,
                 expected_answer=expected_answer,
                 expected_keywords=expected_keywords,
                 difficulty_level=difficulty_level,
                 red_flags=red_flags,
                 transcription=sanitized_transcription,
                 questions_asked=session.questions_asked_count,
-                total_questions=session.total_questions_available
+                total_questions=session.total_questions_available,
+                expected_keywords_coverage=expected_keywords_coverage,
+                expected_time_in_seconds=expected_time_in_seconds,
+                ideal_answer_summary=ideal_answer_summary,
+                total_time_taken_in_seconds=total_time_taken_in_seconds,
+                score_weight_technical=score_weight_technical,
+                score_weight_domain_knowledge=score_weight_domain_knowledge,
+                score_weight_communication=score_weight_communication,
+                score_weight_problem_solving=score_weight_problem_solving,
+                score_weight_creativity=score_weight_creativity,
+                score_weight_attention_to_detail=score_weight_attention_to_detail,
+                score_weight_time_management=score_weight_time_management,
+                score_weight_stress_management=score_weight_stress_management,
+                score_weight_adaptability=score_weight_adaptability,
+                score_weight_confidence=score_weight_confidence
             )
 
-            # Make LLM request
             data = {
                 "model": self.ollama_service.model,
                 "prompt": prompt,
@@ -111,7 +143,6 @@ class AnswerAnalysisService:
             if not response or 'response' not in response:
                 raise LLMServiceError("No response from LLM service")
 
-            # Parse JSON response (raises JSONParseError if parsing fails)
             required_fields = [
                 'score_technical', 'score_domain_knowledge', 'score_communication',
                 'score_problem_solving', 'score_creativity', 'score_attention_to_detail',
@@ -124,14 +155,12 @@ class AnswerAnalysisService:
                 required_fields=required_fields
             )
 
-            # Validate next_action
             valid_actions = ['drill_up', 'drill_down', 'keep_level_same', 'end_of_interview']
             next_action = analysis.get('next_action', 'keep_level_same')
             if next_action not in valid_actions:
                 logger.warning(f"Invalid next_action: {next_action}, using keep_level_same")
                 next_action = 'keep_level_same'
 
-            # Validate end_of_interview condition
             questions_percentage = (
                 (session.questions_asked_count / session.total_questions_available * 100)
                 if session.total_questions_available > 0 else 0
@@ -143,11 +172,8 @@ class AnswerAnalysisService:
                     " (Interview cannot end yet - less than 50% questions asked)"
                 )
 
-            # Extract and validate scores
             scores = ScoreCalculator.validate_analysis_scores(analysis)
 
-            # Get weights from question
-            # Note: question is the Question model instance
             weights = {
                 'technical': question.score_weight_technical or 0.5,
                 'domain_knowledge': question.score_weight_domain_knowledge or 0.3,
@@ -161,11 +187,10 @@ class AnswerAnalysisService:
                 'confidence': question.score_weight_confidence or 0.05,
             }
 
-            # Calculate weighted total score (normalizes weights automatically)
             total_score = ScoreCalculator.calculate_weighted_score(
                 scores=scores,
                 weights=weights,
-                normalize=True  # Ensure weights sum to 1.0
+                normalize=True
             )
 
             # Build result dictionary
@@ -211,20 +236,6 @@ class AdaptiveQuestionSelector:
         next_action: str,
         current_difficulty: str
     ) -> Optional[InterviewPanelQuestion]:
-        """
-        Get next question based on adaptive strategy with improved logic.
-        
-        Args:
-            session: Interview session
-            next_action: Next action (drill_up, drill_down, keep_level_same)
-            current_difficulty: Current difficulty level
-            
-        Returns:
-            Selected question or None if no questions available
-            
-        Raises:
-            QuestionSelectionError: If selection fails critically
-        """
         try:
             if not session.interview_panel_candidate:
                 raise QuestionSelectionError("No interview_panel_candidate in session")
@@ -242,23 +253,20 @@ class AdaptiveQuestionSelector:
                 logger.warning(f"No questions available for panel {panel.uuid}")
                 return None
             
-            # Get already asked questions (exclude greeting answers which have question=None)
             all_answers = InterviewAnswer.objects.filter(
                 interview_session=session,
                 is_deleted=False
             )
             logger.info(f"Total answers for session: {all_answers.count()} (including greeting)")
-            
-            # Filter out greeting answers (round 0) which have question=None
+
             answered_questions = all_answers.filter(
-                question__isnull=False  # Exclude greeting answers (round 0) which have no question
+                question__isnull=False
             ).values_list('question_id', flat=True)
             
             answered_question_ids = list(answered_questions)
             logger.info(f"Already answered question IDs (excluding greeting): {answered_question_ids}")
             logger.info(f"Count: {len(answered_question_ids)}")
             
-            # Filter out already asked questions
             available_questions = all_questions.exclude(id__in=answered_question_ids)
             logger.info(f"Available questions after filtering: {available_questions.count()}")
             
@@ -312,17 +320,6 @@ class AdaptiveQuestionSelector:
         current_difficulty: str,
         available_questions: 'QuerySet'
     ) -> str:
-        """
-        Determine target difficulty with improved logic.
-        
-        Args:
-            next_action: Next action
-            current_difficulty: Current difficulty
-            available_questions: Available questions queryset
-            
-        Returns:
-            Target difficulty level
-        """
         if next_action == 'drill_up':
             difficulty_map = {'easy': 'medium', 'medium': 'hard', 'hard': 'hard'}
             target = difficulty_map.get(current_difficulty, 'medium')
@@ -345,15 +342,6 @@ class AdaptiveQuestionSelector:
         return target
     
     def _get_fallback_difficulties(self, target_difficulty: str) -> List[str]:
-        """
-        Get fallback difficulties in order of preference.
-        
-        Args:
-            target_difficulty: Target difficulty
-            
-        Returns:
-            List of fallback difficulties
-        """
         if target_difficulty == 'hard':
             return ['medium', 'easy']
         elif target_difficulty == 'medium':

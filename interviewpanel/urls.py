@@ -1,7 +1,9 @@
 from django.urls import path
 from .views import (
     InterviewPanelView,
-    StartInterviewPanelView
+    StartInterviewPanelView,
+    CandidateReportDetailView,
+    CandidateReportDownloadView
 )
 
 app_name = 'interviewpanel'
@@ -15,4 +17,8 @@ urlpatterns = [
 
     # active panel
     path('start/<str:token>/', StartInterviewPanelView.as_view(), name='start_interview_panel'),
+
+    # recruiter/admin candidate report APIs
+    path('candidate/report/<str:session_uuid>/', CandidateReportDetailView.as_view(), name='candidate_report_detail'),
+    path('candidate/report/<str:session_uuid>/download/', CandidateReportDownloadView.as_view(), name='candidate_report_download'),
 ]

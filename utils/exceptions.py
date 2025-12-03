@@ -1,9 +1,3 @@
-"""
-Custom exceptions for interview panel services.
-Provides structured error handling instead of silent failures.
-"""
-
-
 class InterviewServiceError(Exception):
     """Base exception for interview service errors"""
     pass
